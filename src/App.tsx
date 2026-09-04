@@ -6,9 +6,9 @@ import {
   ExternalLink,
   Lightbulb,
   LoaderCircle,
+  Play,
   Plus,
   RotateCcw,
-  Search,
   Share2,
   Shuffle,
   ChevronRight,
@@ -640,6 +640,7 @@ function Home({ onPlay, onCreate, catalog, catalogLoading, catalogError, onRetry
   const recentVisible = showAllRecent ? recent : recent.slice(0, 4)
   const createdVisible = showAllCreated ? created : created.slice(0, 4)
   const catalogVisible = showAllCatalog ? catalog : catalog.slice(0, 4)
+  const quickPlay = catalog[0]
 
   return (
     <main className="home-shell">
@@ -648,8 +649,14 @@ function Home({ onPlay, onCreate, catalog, catalogLoading, catalogError, onRetry
         <h1>Qual fio você puxa agora?</h1>
         <p className="home-tagline">Quatro grupos. Dezesseis palavras. Uma trama para fechar.</p>
         <div className="home-actions">
-          <button className="button primary large" onClick={() => document.getElementById('explore-tramas')?.scrollIntoView?.({ behavior: 'smooth' })} type="button">
-            <Search aria-hidden="true" size={16} /> Ver tramas
+          <button
+            className="button primary large"
+            disabled={!quickPlay || catalogLoading}
+            onClick={() => quickPlay && onPlay(quickPlay.puzzle, `/p/${quickPlay.id}`)}
+            type="button"
+          >
+            {catalogLoading ? <LoaderCircle aria-hidden="true" className="spin" size={16} /> : <Play aria-hidden="true" size={16} />}
+            {catalogLoading ? 'Buscando Trama...' : 'Jogar uma Trama'}
           </button>
           <button className="button secondary large" onClick={onCreate} type="button">
             <Plus aria-hidden="true" size={16} /> Criar Trama

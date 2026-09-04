@@ -220,7 +220,7 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .home-hero {
   max-width: 660px;
   margin: 0 auto;
-  padding: clamp(28px, 5vh, 48px) 0 26px;
+  padding: clamp(24px, 4vh, 38px) 0 16px;
   text-align: center;
 }
 
@@ -233,7 +233,7 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 }
 
 .home-tagline { max-width: 590px; margin: 13px auto 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
-.home-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 9px; margin-top: 20px; }
+.home-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 9px; margin-top: 22px; }
 
 .home-section { margin-top: 24px; }
 .section-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
