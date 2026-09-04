@@ -42,3 +42,7 @@ React, TypeScript, Vite, Vitest, Testing Library, Vercel Functions, Neon Postgre
 ## Contribuição
 
 Issues e pull requests são bem-vindos. Antes de começar, consulte [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Licença
+
+Distribuído sob a [licença MIT](LICENSE).
