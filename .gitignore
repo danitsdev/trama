@@ -8,6 +8,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+coverage
 dist
 dist-ssr
 .vercel
@@ -15,6 +16,11 @@ dist-ssr
 .env*
 !.env.example
 data/*.sqlite*
+
+# Configuração local de assistentes
+.agents/
+.claude/
+skills-lock.json
 
 # Editor directories and files
 .vscode/*
