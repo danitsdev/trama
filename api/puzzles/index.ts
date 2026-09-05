@@ -29,8 +29,18 @@ async function ensureTable(sql: NeonQueryFunction<false, false>) {
         CREATE TABLE IF NOT EXISTS trama_puzzles (
           id TEXT PRIMARY KEY,
           payload TEXT NOT NULL,
+          title TEXT NOT NULL DEFAULT '',
+          author TEXT NOT NULL DEFAULT '',
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+      `
+      await sql`ALTER TABLE trama_puzzles ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT ''`
+      await sql`ALTER TABLE trama_puzzles ADD COLUMN IF NOT EXISTS author TEXT NOT NULL DEFAULT ''`
+      await sql`
+        UPDATE trama_puzzles
+        SET title = COALESCE(payload::jsonb ->> 'title', ''),
+            author = COALESCE(payload::jsonb ->> 'author', '')
+        WHERE title = ''
       `
       await sql`CREATE INDEX IF NOT EXISTS trama_puzzles_created_at_idx ON trama_puzzles (created_at DESC)`
     })().catch((error: unknown) => {
@@ -53,19 +63,16 @@ export default async function handler(request: ApiRequest, response: ApiResponse
 
     if (request.method === 'GET') {
       const rows = await sql`
-        SELECT id, payload, created_at
+        SELECT id, title, author, created_at
         FROM trama_puzzles
         ORDER BY created_at DESC, id DESC
       `
-      const puzzles = rows.flatMap((row) => {
-        try {
-          const puzzle: unknown = JSON.parse(String(row.payload))
-          if (!isPuzzleShape(puzzle) || validatePuzzle(puzzle).length > 0) return []
-          return [{ id: String(row.id), puzzle, createdAt: String(row.created_at) }]
-        } catch {
-          return []
-        }
-      })
+      const puzzles = rows.map((row) => ({
+        id: String(row.id),
+        title: String(row.title),
+        author: String(row.author),
+        createdAt: String(row.created_at),
+      }))
       return response.status(200).json({ puzzles })
     }
 
@@ -85,8 +92,8 @@ export default async function handler(request: ApiRequest, response: ApiResponse
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const id = newSlug()
       const inserted = await sql`
-        INSERT INTO trama_puzzles (id, payload)
-        VALUES (${id}, ${payload})
+        INSERT INTO trama_puzzles (id, payload, title, author)
+        VALUES (${id}, ${payload}, ${candidate.title}, ${candidate.author})
         ON CONFLICT (id) DO NOTHING
         RETURNING id
       `

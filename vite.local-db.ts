@@ -30,20 +30,36 @@ export function createLocalPuzzleStore(filename: string): LocalPuzzleStore {
     CREATE TABLE IF NOT EXISTS trama_puzzles (
       id TEXT PRIMARY KEY,
       payload TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      author TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `)
 
-  const insert = database.prepare('INSERT INTO trama_puzzles (id, payload) VALUES (?, ?)')
+  const columns = database.prepare('PRAGMA table_info(trama_puzzles)').all() as Array<{ name: string }>
+  if (!columns.some((column) => column.name === 'title')) database.exec("ALTER TABLE trama_puzzles ADD COLUMN title TEXT NOT NULL DEFAULT ''")
+  if (!columns.some((column) => column.name === 'author')) database.exec("ALTER TABLE trama_puzzles ADD COLUMN author TEXT NOT NULL DEFAULT ''")
+  const updateMetadata = database.prepare('UPDATE trama_puzzles SET title = ?, author = ? WHERE id = ?')
+  const legacyRows = database.prepare("SELECT id, payload FROM trama_puzzles WHERE title = ''").all() as Array<{ id: string; payload: string }>
+  for (const row of legacyRows) {
+    try {
+      const puzzle = JSON.parse(row.payload) as Puzzle
+      updateMetadata.run(puzzle.title, puzzle.author, row.id)
+    } catch {
+      // Uma linha legada inválida não impede a inicialização do banco local.
+    }
+  }
+
+  const insert = database.prepare('INSERT INTO trama_puzzles (id, payload, title, author) VALUES (?, ?, ?, ?)')
   const select = database.prepare('SELECT payload FROM trama_puzzles WHERE id = ? LIMIT 1')
-  const selectAll = database.prepare('SELECT id, payload, created_at FROM trama_puzzles ORDER BY created_at DESC, id DESC')
+  const selectAll = database.prepare('SELECT id, title, author, created_at FROM trama_puzzles ORDER BY created_at DESC, id DESC')
 
   return {
     save(puzzle) {
       for (let attempt = 0; attempt < 8; attempt += 1) {
         const id = createId()
         try {
-          insert.run(id, JSON.stringify(puzzle))
+          insert.run(id, JSON.stringify(puzzle), puzzle.title, puzzle.author)
           return id
         } catch (error) {
           if (!(error instanceof Error) || !error.message.includes('UNIQUE constraint failed')) throw error
@@ -58,15 +74,12 @@ export function createLocalPuzzleStore(filename: string): LocalPuzzleStore {
       return JSON.parse(row.payload) as Puzzle
     },
     list() {
-      return (selectAll.all() as Array<{ id: string; payload: string; created_at: string }>).flatMap((row) => {
-        try {
-          const puzzle: unknown = JSON.parse(row.payload)
-          if (!isPuzzleShape(puzzle) || validatePuzzle(puzzle).length > 0) return []
-          return [{ id: row.id, puzzle, createdAt: row.created_at }]
-        } catch {
-          return []
-        }
-      })
+      return (selectAll.all() as Array<{ id: string; title: string; author: string; created_at: string }>).map((row) => ({
+        id: row.id,
+        title: row.title,
+        author: row.author,
+        createdAt: row.created_at,
+      }))
     },
     close() {
       database.close()

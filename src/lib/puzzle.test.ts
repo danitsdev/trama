@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  decodePuzzle,
-  encodePuzzle,
   evaluateSelection,
   shuffleWords,
   validatePuzzle,
@@ -19,16 +17,6 @@ const puzzle: Puzzle = {
     { label: 'Doces', words: ['COCADA', 'PAÇOCA', 'PUDIM', 'QUINDIM'] },
   ],
 }
-
-describe('codec de puzzle', () => {
-  it('preserva acentos e conteúdo no round-trip do link', () => {
-    expect(decodePuzzle(encodePuzzle(puzzle))).toEqual(puzzle)
-  })
-
-  it('rejeita conteúdo inválido ou adulterado', () => {
-    expect(() => decodePuzzle('nao-e-um-puzzle')).toThrow('Link inválido')
-  })
-})
 
 describe('validação do criador', () => {
   it('aceita quatro grupos completos com palavras únicas', () => {

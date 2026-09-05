@@ -35,7 +35,7 @@ describe('SQLite local do Trama', () => {
     expect(store.get(id)).toEqual(puzzle)
     expect(store.get('nao-existe')).toBeNull()
     expect(store.list()).toEqual([
-      expect.objectContaining({ id, puzzle }),
+      expect.objectContaining({ id, title: puzzle.title, author: puzzle.author }),
     ])
     store.close()
   })

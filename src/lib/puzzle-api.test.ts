@@ -66,14 +66,14 @@ describe('links curtos', () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(JSON.stringify({
         puzzles: [
-          { id: 'Ab_12-x', puzzle, createdAt: '2026-08-27T03:29:45.000Z' },
-          { id: 'invalido', puzzle: { title: 'sem formato' }, createdAt: 'agora' },
+          { id: 'Ab_12-x', title: puzzle.title, author: puzzle.author, createdAt: '2026-08-27T03:29:45.000Z' },
+          { id: 'inválido!', title: 'sem formato', author: '', createdAt: 'agora' },
         ],
       }), { status: 200 }),
     )
 
     await expect(listPuzzles(fetcher)).resolves.toEqual([
-      { id: 'Ab_12-x', puzzle, createdAt: '2026-08-27T03:29:45.000Z' },
+      { id: 'Ab_12-x', title: puzzle.title, author: puzzle.author, createdAt: '2026-08-27T03:29:45.000Z' },
     ])
     expect(fetcher).toHaveBeenCalledWith('/api/puzzles')
   })

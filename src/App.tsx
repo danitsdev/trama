@@ -16,8 +16,6 @@ import {
 } from 'lucide-react'
 import './App.css'
 import {
-  decodePuzzle,
-  encodePuzzle,
   evaluateSelection,
   shuffleWords,
   validatePuzzle,
@@ -29,11 +27,11 @@ import { buildPuzzleUrl, createPuzzleLink, listPuzzles, loadPuzzleBySlug, parseP
 
 const GROUP_COLORS = ['sun', 'leaf', 'sky', 'berry'] as const
 
-type LinkMode = 'server' | 'sqlite' | 'hash'
-type CreatedLink = { url: string; mode: LinkMode }
+type LinkMode = 'server' | 'sqlite'
+type CreatedLink = { id: string; url: string; mode: LinkMode }
 type TimelineEntry = 'wrong' | 'hint' | number
-type HistoryEntry = { id: string; title: string; author: string; playedAt: number; completed: boolean; payload?: string }
-type CreatedPuzzleEntry = { id: string; url: string; puzzle: Puzzle; createdAt: number }
+type HistoryEntry = { id: string; title: string; author: string; playedAt: number; completed: boolean }
+type CreatedPuzzleEntry = { id: string; title: string; author: string; createdAt: number }
 const ONBOARDING_KEY = 'trama-onboarding-seen'
 const HISTORY_KEY = 'trama-history'
 const CREATED_KEY = 'trama-created'
@@ -70,24 +68,12 @@ function BrandMark() {
   )
 }
 
-function hashPuzzle(): { puzzle: Puzzle | null; error: string | null } {
-  const encoded = window.location.hash.startsWith('#p=') ? window.location.hash.slice(3) : ''
-  if (!encoded) return { puzzle: null, error: null }
-  try {
-    return { puzzle: decodePuzzle(encoded), error: null }
-  } catch {
-    return { puzzle: null, error: 'Este link está incompleto ou não é mais compatível.' }
-  }
-}
-
 function initialRouteState(): { puzzle: Puzzle | null; error: string | null; loading: boolean } {
   const slug = parsePuzzleRoute(window.location.pathname)
   if (slug) {
     return { puzzle: null, error: null, loading: true }
   }
-  const hash = hashPuzzle()
-  if (hash.puzzle || hash.error) return { puzzle: hash.puzzle, error: hash.error, loading: false }
-  // Sem slug ou hash: Home primeiro. Nunca iniciar um jogo aleatório.
+  if (window.location.hash.startsWith('#p=')) window.history.replaceState({}, '', '/')
   return { puzzle: null, error: null, loading: false }
 }
 
@@ -131,11 +117,11 @@ type Progress = {
   hintsUsed: number
 }
 
-const progressKey = (puzzle: Puzzle) => `trama-progress:${encodePuzzle(puzzle)}`
+const progressKey = (puzzleId: string) => `trama-progress:${puzzleId}`
 
-function loadProgress(puzzle: Puzzle): Progress | null {
+function loadProgress(puzzle: Puzzle, puzzleId: string): Progress | null {
   try {
-    const raw = localStorage.getItem(progressKey(puzzle))
+    const raw = localStorage.getItem(progressKey(puzzleId))
     if (!raw) return null
     const value: unknown = JSON.parse(raw)
     if (!value || typeof value !== 'object') return null
@@ -167,10 +153,9 @@ function loadProgress(puzzle: Puzzle): Progress | null {
   }
 }
 
-function GameBoard({ puzzle }: { puzzle: Puzzle }) {
-  const [initialProgress] = useState(() => loadProgress(puzzle))
-  const storageKey = useMemo(() => progressKey(puzzle), [puzzle])
-  const puzzlePayload = useMemo(() => encodePuzzle(puzzle), [puzzle])
+function GameBoard({ puzzle, puzzleId }: { puzzle: Puzzle; puzzleId: string }) {
+  const [initialProgress] = useState(() => loadProgress(puzzle, puzzleId))
+  const storageKey = useMemo(() => progressKey(puzzleId), [puzzleId])
   const [restorationActive, setRestorationActive] = useState(true)
   const restoredSolved = restorationActive ? initialProgress?.solved ?? [] : []
   const restoredFinished = restorationActive && restoredSolved.length === puzzle.groups.length
@@ -211,14 +196,13 @@ function GameBoard({ puzzle }: { puzzle: Puzzle }) {
 
   useEffect(() => {
     saveHistory({
-      id: puzzlePayload,
+      id: puzzleId,
       title: puzzle.title,
       author: puzzle.author,
       playedAt: Date.now(),
       completed: restoredFinished,
-      payload: puzzlePayload,
     })
-  }, [puzzle, puzzlePayload, restoredFinished])
+  }, [puzzle, puzzleId, restoredFinished])
 
   const finished = solved.length === puzzle.groups.length
   const remainingWords = useMemo(
@@ -243,12 +227,11 @@ function GameBoard({ puzzle }: { puzzle: Puzzle }) {
         setCelebratingGroup(null)
         setHints((current) => current.filter((word) => !puzzle.groups[result.groupIndex].words.includes(word)))
         saveHistory({
-          id: puzzlePayload,
+          id: puzzleId,
           title: puzzle.title,
           author: puzzle.author,
           playedAt: Date.now(),
           completed: nextSolved.length === puzzle.groups.length,
-          payload: puzzlePayload,
         })
       }, 720)
       return
@@ -371,7 +354,7 @@ function GameBoard({ puzzle }: { puzzle: Puzzle }) {
     setHistory([])
     setHints([])
     setHintsUsed(0)
-    saveHistory({ id: puzzlePayload, title: puzzle.title, author: puzzle.author, playedAt: Date.now(), completed: false, payload: puzzlePayload })
+    saveHistory({ id: puzzleId, title: puzzle.title, author: puzzle.author, playedAt: Date.now(), completed: false })
   }
 
   const attemptLine = history.map((entry) => {
@@ -385,7 +368,7 @@ function GameBoard({ puzzle }: { puzzle: Puzzle }) {
       ? ` e ${hintsUsed} dica${hintsUsed === 1 ? '' : 's'}`
       : ' e sem dicas'
     await copyText([
-      `Joguei ${window.location.href} e consegui em ${attempts} tentativa${attempts === 1 ? '' : 's'}${hintSummary}.`,
+      `Joguei ${buildPuzzleUrl(puzzleId)} e consegui em ${attempts} tentativa${attempts === 1 ? '' : 's'}${hintSummary}.`,
       '',
       attemptLine,
     ].join('\n'))
@@ -531,7 +514,7 @@ function loadHistory(): HistoryEntry[] {
     return value.filter((entry): entry is HistoryEntry => {
       if (!entry || typeof entry !== 'object') return false
       const candidate = entry as Partial<HistoryEntry>
-      return typeof candidate.id === 'string' && typeof candidate.title === 'string' && typeof candidate.author === 'string' && typeof candidate.playedAt === 'number' && typeof candidate.completed === 'boolean'
+      return typeof candidate.id === 'string' && /^[A-Za-z0-9_-]{6,32}$/u.test(candidate.id) && typeof candidate.title === 'string' && typeof candidate.author === 'string' && typeof candidate.playedAt === 'number' && typeof candidate.completed === 'boolean'
     })
   } catch {
     return []
@@ -556,11 +539,11 @@ function loadCreatedPuzzles(): CreatedPuzzleEntry[] {
       const candidate = entry as Partial<CreatedPuzzleEntry>
       return (
         typeof candidate.id === 'string' &&
-        typeof candidate.url === 'string' &&
+        /^[A-Za-z0-9_-]{6,32}$/u.test(candidate.id) &&
+        typeof candidate.title === 'string' &&
+        typeof candidate.author === 'string' &&
         typeof candidate.createdAt === 'number' &&
-        Number.isFinite(candidate.createdAt) &&
-        isPuzzleShape(candidate.puzzle) &&
-        validatePuzzle(candidate.puzzle).length === 0
+        Number.isFinite(candidate.createdAt)
       )
     })
   } catch {
@@ -570,8 +553,7 @@ function loadCreatedPuzzles(): CreatedPuzzleEntry[] {
 
 function saveCreatedPuzzle(entry: CreatedPuzzleEntry) {
   try {
-    const encoded = encodePuzzle(entry.puzzle)
-    const filtered = loadCreatedPuzzles().filter((item) => item.id !== entry.id && encodePuzzle(item.puzzle) !== encoded)
+    const filtered = loadCreatedPuzzles().filter((item) => item.id !== entry.id)
     filtered.unshift(entry)
     localStorage.setItem(CREATED_KEY, JSON.stringify(filtered.slice(0, 50)))
   } catch {}
@@ -583,18 +565,9 @@ function formatCardDate(value: string | number): string {
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' }).format(date).replace('.', '')
 }
 
-function historyPuzzle(entry: HistoryEntry): Puzzle | null {
-  try {
-    return decodePuzzle(entry.payload ?? entry.id)
-  } catch {
-    return null
-  }
-}
-
 type CardTone = (typeof GROUP_COLORS)[number]
 
-function TramaCard({ puzzle, status = 'Publicada', date, tone, onPlay }: { puzzle: Puzzle; status?: string; date?: string | number; tone: CardTone; onPlay: () => void }) {
-  const wordCount = puzzle.groups.reduce((total, group) => total + group.words.length, 0)
+function TramaCard({ title, author, status = 'Publicada', date, tone, onPlay }: { title: string; author: string; status?: string; date?: string | number; tone: CardTone; onPlay: () => void }) {
   const formattedDate = date === undefined ? '' : formatCardDate(date)
   const activateCard = (event: React.KeyboardEvent<HTMLElement>) => {
     if (event.key !== 'Enter' && event.key !== ' ') return
@@ -602,16 +575,16 @@ function TramaCard({ puzzle, status = 'Publicada', date, tone, onPlay }: { puzzl
     onPlay()
   }
   return (
-    <article aria-label={`Jogar ${puzzle.title}`} className={`trama-card ${tone}`} onClick={onPlay} onKeyDown={activateCard} role="button" tabIndex={0}>
+    <article aria-label={`Jogar ${title}`} className={`trama-card ${tone}`} onClick={onPlay} onKeyDown={activateCard} role="button" tabIndex={0}>
       <span aria-hidden="true" className="trama-card-thread"><i /><i /><i /></span>
       <div className="trama-card-top">
         <span className="trama-category">{status}</span>
         {formattedDate && <time dateTime={typeof date === 'number' ? new Date(date).toISOString() : date}>{formattedDate}</time>}
       </div>
-      <h3>{puzzle.title}</h3>
-      <p className="trama-meta">por {puzzle.author || 'Anônimo'}</p>
+      <h3>{title}</h3>
+      <p className="trama-meta">por {author || 'Anônimo'}</p>
       <div className="trama-card-foot">
-        <span className="trama-size">{wordCount} palavras</span>
+        <span className="trama-size">16 palavras</span>
         <span aria-hidden="true" className="card-play">
           <span>Jogar</span>
           <ChevronRight aria-hidden="true" size={17} />
@@ -622,7 +595,7 @@ function TramaCard({ puzzle, status = 'Publicada', date, tone, onPlay }: { puzzl
 }
 
 function Home({ onPlay, onCreate, catalog, catalogLoading, catalogError, onRetryCatalog }: {
-  onPlay: (puzzle: Puzzle, url: string) => void
+  onPlay: (id: string) => void
   onCreate: () => void
   catalog: ListedPuzzle[]
   catalogLoading: boolean
@@ -631,8 +604,6 @@ function Home({ onPlay, onCreate, catalog, catalogLoading, catalogError, onRetry
 }) {
   const history = loadHistory()
   const recent = history
-    .map((entry) => ({ entry, puzzle: historyPuzzle(entry) }))
-    .filter((item): item is { entry: HistoryEntry; puzzle: Puzzle } => Boolean(item.puzzle))
   const created = loadCreatedPuzzles()
   const [showAllRecent, setShowAllRecent] = useState(false)
   const [showAllCreated, setShowAllCreated] = useState(false)
@@ -652,7 +623,7 @@ function Home({ onPlay, onCreate, catalog, catalogLoading, catalogError, onRetry
           <button
             className="button primary large"
             disabled={!quickPlay || catalogLoading}
-            onClick={() => quickPlay && onPlay(quickPlay.puzzle, `/p/${quickPlay.id}`)}
+            onClick={() => quickPlay && onPlay(quickPlay.id)}
             type="button"
           >
             {catalogLoading ? <LoaderCircle aria-hidden="true" className="spin" size={16} /> : <Play aria-hidden="true" size={16} />}
@@ -674,7 +645,7 @@ function Home({ onPlay, onCreate, catalog, catalogLoading, catalogError, onRetry
             {recent.length > 4 && <button className="section-link" onClick={() => setShowAllRecent((current) => !current)} type="button">{showAllRecent ? 'Mostrar menos' : 'Ver todas'}</button>}
           </header>
           <div className="trama-grid">
-            {recentVisible.map(({ entry, puzzle }, index) => <TramaCard key={entry.id} date={entry.playedAt} onPlay={() => onPlay(puzzle, `#p=${encodePuzzle(puzzle)}`)} puzzle={puzzle} status={entry.completed ? 'Concluída' : 'Em andamento'} tone={GROUP_COLORS[index % GROUP_COLORS.length]} />)}
+            {recentVisible.map((entry, index) => <TramaCard author={entry.author} key={entry.id} date={entry.playedAt} onPlay={() => onPlay(entry.id)} status={entry.completed ? 'Concluída' : 'Em andamento'} title={entry.title} tone={GROUP_COLORS[index % GROUP_COLORS.length]} />)}
           </div>
         </section>
       )}
@@ -689,7 +660,7 @@ function Home({ onPlay, onCreate, catalog, catalogLoading, catalogError, onRetry
             {created.length > 4 && <button className="section-link" onClick={() => setShowAllCreated((current) => !current)} type="button">{showAllCreated ? 'Mostrar menos' : 'Ver todas'}</button>}
           </header>
           <div className="trama-grid">
-            {createdVisible.map((item, index) => <TramaCard key={item.id} date={item.createdAt} onPlay={() => onPlay(item.puzzle, item.url)} puzzle={item.puzzle} status="Criada por você" tone={GROUP_COLORS[(index + 1) % GROUP_COLORS.length]} />)}
+            {createdVisible.map((item, index) => <TramaCard author={item.author} key={item.id} date={item.createdAt} onPlay={() => onPlay(item.id)} status="Criada por você" title={item.title} tone={GROUP_COLORS[(index + 1) % GROUP_COLORS.length]} />)}
           </div>
         </section>
       )}
@@ -705,7 +676,7 @@ function Home({ onPlay, onCreate, catalog, catalogLoading, catalogError, onRetry
         {catalogLoading && <div className="home-empty"><LoaderCircle aria-hidden="true" className="spin" size={20} /><span>Carregando tramas publicadas…</span></div>}
         {!catalogLoading && catalogError && <div className="home-empty"><p>{catalogError}</p><button className="section-link" onClick={onRetryCatalog} type="button">Tentar novamente</button></div>}
         {!catalogLoading && !catalogError && catalog.length === 0 && <div className="home-empty"><p>Ainda não há tramas publicadas.</p><button className="button secondary" onClick={onCreate} type="button"><Plus aria-hidden="true" size={16} /> Criar a primeira</button></div>}
-        {!catalogLoading && !catalogError && catalog.length > 0 && <div className="trama-grid">{catalogVisible.map((item, index) => <TramaCard key={item.id} date={item.createdAt} onPlay={() => onPlay(item.puzzle, `/p/${item.id}`)} puzzle={item.puzzle} tone={GROUP_COLORS[(index + 2) % GROUP_COLORS.length]} />)}</div>}
+        {!catalogLoading && !catalogError && catalog.length > 0 && <div className="trama-grid">{catalogVisible.map((item, index) => <TramaCard author={item.author} key={item.id} date={item.createdAt} onPlay={() => onPlay(item.id)} title={item.title} tone={GROUP_COLORS[(index + 2) % GROUP_COLORS.length]} />)}</div>}
       </section>
     </main>
   )
@@ -767,7 +738,7 @@ function ErrorScreen({ message, onRetry, onCreate }: { message: string; onRetry:
   )
 }
 
-function Creator({ onBack, onPlay }: { onBack: () => void; onPlay: (puzzle: Puzzle, url: string) => void }) {
+function Creator({ onBack, onPlay }: { onBack: () => void; onPlay: (id: string) => void }) {
   const [draft, setDraft] = useState<Puzzle>(loadCreatorDraft)
   const [errors, setErrors] = useState<string[]>([])
   const [createdLink, setCreatedLink] = useState<CreatedLink | null>(null)
@@ -815,23 +786,12 @@ function Creator({ onBack, onPlay }: { onBack: () => void; onPlay: (puzzle: Puzz
     try {
       const { id, storage } = await createPuzzleLink(cleaned)
       const url = buildPuzzleUrl(id)
-      saveCreatedPuzzle({ id, url, puzzle: cleaned, createdAt: Date.now() })
+      saveCreatedPuzzle({ id, title: cleaned.title, author: cleaned.author, createdAt: Date.now() })
       localStorage.removeItem(CREATOR_DRAFT_KEY)
-      setCreatedLink({ url, mode: storage === 'local' ? 'sqlite' : 'server' })
+      setCreatedLink({ id, url, mode: storage === 'local' ? 'sqlite' : 'server' })
       setDraft(cleaned)
     } catch (error) {
-      if (import.meta.env.DEV) {
-        const url = `${window.location.origin}${window.location.pathname}#p=${encodePuzzle(cleaned)}`
-        saveCreatedPuzzle({ id: encodePuzzle(cleaned), url, puzzle: cleaned, createdAt: Date.now() })
-        localStorage.removeItem(CREATOR_DRAFT_KEY)
-        setCreatedLink({
-          url,
-          mode: 'hash',
-        })
-        setDraft(cleaned)
-      } else {
-        setErrors([error instanceof Error ? error.message : 'Não foi possível criar o link curto.'])
-      }
+      setErrors([error instanceof Error ? error.message : 'Não foi possível criar o link curto.'])
     } finally {
       setPublishing(false)
     }
@@ -854,7 +814,7 @@ function Creator({ onBack, onPlay }: { onBack: () => void; onPlay: (puzzle: Puzz
         <div className="success-knot"><BrandMark /></div>
         <span className="eyebrow">LINK CURTO PRONTO</span>
         <h1>Sua Trama ganhou vida.</h1>
-        <p>{createdLink.mode === 'hash' ? 'A API local não respondeu; este link com payload serve apenas para testar.' : 'Agora é só mandar o link no grupo.'}</p>
+        <p>Agora é só mandar o link no grupo.</p>
         <div className="share-box">
           <input aria-label="Link compartilhável" readOnly value={createdLink.url} />
           <button className="button primary" onClick={shareLink} type="button">
@@ -862,7 +822,7 @@ function Creator({ onBack, onPlay }: { onBack: () => void; onPlay: (puzzle: Puzz
             <span>{copied ? 'Copiado!' : nativeShare ? 'Compartilhar' : 'Copiar link'}</span>
           </button>
         </div>
-        <button className="text-button" onClick={() => onPlay(draft, createdLink.url)} type="button">
+        <button className="text-button" onClick={() => onPlay(createdLink.id)} type="button">
           Jogar antes de compartilhar <ExternalLink aria-hidden="true" size={15} />
         </button>
       </main>
@@ -945,6 +905,7 @@ function AppHeader({ screen, onBack, onHelp }: { screen: 'home' | 'play' | 'crea
 
 function App() {
   const [initialRoute] = useState(initialRouteState)
+  const [puzzleId, setPuzzleId] = useState(() => parsePuzzleRoute(window.location.pathname))
   const [mode, setMode] = useState<'play' | 'create'>('play')
   const [puzzle, setPuzzle] = useState<Puzzle | null>(initialRoute.puzzle)
   const [loading, setLoading] = useState(initialRoute.loading)
@@ -972,6 +933,7 @@ function App() {
       .then((loaded) => {
         if (!active) return
         setPuzzle(loaded)
+        setPuzzleId(slug)
         setLoading(false)
       })
       .catch((error: unknown) => {
@@ -1002,23 +964,36 @@ function App() {
   const goHome = () => {
     window.history.pushState({}, '', '/')
     setPuzzle(null)
+    setPuzzleId(null)
     setRouteError(null)
     setMode('play')
     refreshCatalog()
   }
 
-  const playPuzzle = (nextPuzzle: Puzzle, url: string) => {
-    const target = new URL(url, window.location.origin)
-    window.history.pushState({}, '', `${target.pathname}${target.hash}`)
-    setPuzzle(nextPuzzle)
+  const playPuzzle = async (id: string) => {
+    if (!id) return
+    setLoading(true)
     setRouteError(null)
-    setMode('play')
+    try {
+      const nextPuzzle = await loadPuzzleBySlug(id)
+      window.history.pushState({}, '', `/p/${id}`)
+      setPuzzle(nextPuzzle)
+      setPuzzleId(id)
+      setMode('play')
+    } catch (error) {
+      setPuzzle(null)
+      setPuzzleId(null)
+      setRouteError(error instanceof Error ? error.message : 'Não foi possível abrir esta Trama.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const openCreator = () => {
     setShowOnboarding(false)
     setMode('create')
     setPuzzle(null)
+    setPuzzleId(null)
     setRouteError(null)
     window.history.pushState({}, '', '/')
   }
@@ -1039,7 +1014,7 @@ function App() {
   return (
     <div className="app">
       <AppHeader screen={screen} onBack={goHome} onHelp={() => setShowOnboarding(true)} />
-      {routeError ? <ErrorScreen message={routeError} onCreate={openCreator} onRetry={() => window.location.reload()} /> : isHome ? <Home catalog={catalog} catalogError={catalogError} catalogLoading={catalogLoading} onCreate={openCreator} onPlay={playPuzzle} onRetryCatalog={refreshCatalog} /> : isCreate ? <Creator onBack={goHome} onPlay={playPuzzle} /> : puzzle ? <GameBoard key={encodePuzzle(puzzle)} puzzle={puzzle} /> : null}
+      {routeError ? <ErrorScreen message={routeError} onCreate={openCreator} onRetry={() => window.location.reload()} /> : isHome ? <Home catalog={catalog} catalogError={catalogError} catalogLoading={catalogLoading} onCreate={openCreator} onPlay={playPuzzle} onRetryCatalog={refreshCatalog} /> : isCreate ? <Creator onBack={goHome} onPlay={playPuzzle} /> : puzzle && puzzleId ? <GameBoard key={puzzleId} puzzle={puzzle} puzzleId={puzzleId} /> : null}
       {(isHome || isCreate || routeError) && <footer><span>Trama</span><span>Jogue, crie, compartilhe.</span></footer>}
       {showOnboarding && !isCreate && <OnboardingModal onClose={dismissOnboarding} />}
     </div>

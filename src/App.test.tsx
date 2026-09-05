@@ -2,7 +2,9 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
-import { encodePuzzle, type Puzzle } from './lib/puzzle'
+import type { Puzzle } from './lib/puzzle'
+
+const TEST_PUZZLE_ID = 'Test_123'
 
 const testPuzzle: Puzzle = {
   v: 1,
@@ -37,7 +39,8 @@ describe('Trama', () => {
 
   const startGame = async (_user: ReturnType<typeof userEvent.setup>) => {
     cleanup()
-    window.location.hash = `#p=${encodePuzzle(testPuzzle)}`
+    window.history.replaceState({}, '', `/p/${TEST_PUZZLE_ID}`)
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ puzzle: testPuzzle }), { status: 200 }))
     render(<App />)
     await waitFor(() => expect(screen.getByRole('grid', { name: 'Palavras' })).toBeInTheDocument())
   }
@@ -256,7 +259,7 @@ describe('Trama', () => {
     expect(screen.getByRole('textbox', { name: 'Link compartilhável' })).toHaveValue('http://localhost:3000/p/Ab_12-x')
     expect(fetchMock).toHaveBeenCalledWith('/api/puzzles', expect.objectContaining({ method: 'POST' }))
     expect(JSON.parse(localStorage.getItem('trama-created') ?? '[]')).toEqual([
-      expect.objectContaining({ id: 'Ab_12-x', puzzle: expect.objectContaining({ title: 'Trama do grupo' }) }),
+      expect.objectContaining({ id: 'Ab_12-x', title: 'Trama do grupo' }),
     ])
   }, 10000)
 
@@ -270,9 +273,11 @@ describe('Trama', () => {
   })
 
   it('abre uma Trama real retornada pela coleção, em vez de um jogo inventado', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ puzzles: [{ id: 'Ab_12-x', puzzle: testPuzzle, createdAt: '2026-08-27T03:29:45.000Z' }] }), { status: 200 }),
-    )
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => (
+      String(input) === '/api/puzzles/Ab_12-x'
+        ? new Response(JSON.stringify({ puzzle: testPuzzle }), { status: 200 })
+        : new Response(JSON.stringify({ puzzles: [{ id: 'Ab_12-x', title: testPuzzle.title, author: testPuzzle.author, createdAt: '2026-08-27T03:29:45.000Z' }] }), { status: 200 })
+    ))
     const user = userEvent.setup()
     render(<App />)
 
@@ -284,21 +289,28 @@ describe('Trama', () => {
   })
 
   it('mostra as Tramas criadas pelo jogador a partir do cache local', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ puzzles: [] }), { status: 200 }))
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => (
+      String(input) === '/api/puzzles/Ab_12-x'
+        ? new Response(JSON.stringify({ puzzle: testPuzzle }), { status: 200 })
+        : new Response(JSON.stringify({ puzzles: [] }), { status: 200 })
+    ))
     localStorage.setItem('trama-created', JSON.stringify([
-      { id: 'Ab_12-x', url: '/p/Ab_12-x', puzzle: testPuzzle, createdAt: 1777000000000 },
+      { id: 'Ab_12-x', title: testPuzzle.title, author: testPuzzle.author, createdAt: 1777000000000 },
     ]))
     render(<App />)
 
     expect(await screen.findByRole('heading', { name: 'Suas Tramas' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Jogar Trama de teste' })).toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Jogar Trama de teste' }))
+    expect(await screen.findByRole('grid', { name: 'Palavras' })).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith('/api/puzzles/Ab_12-x')
     expect(screen.queryByText(/trama do dia/i)).not.toBeInTheDocument()
   })
 
   it('expande Explore tramas para todos os registros retornados pelo banco', async () => {
     const puzzles = Array.from({ length: 5 }, (_, index) => ({
       id: `Ab_12-${index}`,
-      puzzle: { ...testPuzzle, title: `Trama publicada ${index + 1}` },
+      title: `Trama publicada ${index + 1}`,
+      author: testPuzzle.author,
       createdAt: '2026-08-27T03:29:45.000Z',
     }))
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ puzzles }), { status: 200 }))
@@ -356,6 +368,8 @@ describe('Trama', () => {
 
   it('preserva a ordem cronológica de dicas e tentativas no resultado', async () => {
     const user = userEvent.setup()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
     render(<App />)
     await startGame(user)
 
@@ -375,6 +389,10 @@ describe('Trama', () => {
 
     const timeline = Array.from(screen.getByLabelText('Histórico de tentativas').children).map((item) => item.getAttribute('aria-label'))
     expect(timeline.slice(0, 3)).toEqual(['Dica usada', 'Tentativa incorreta', 'Dica usada'])
+    await user.click(screen.getByRole('button', { name: /compartilhar/i }))
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining(`http://localhost:3000/p/${TEST_PUZZLE_ID}`))
+    expect(writeText).not.toHaveBeenCalledWith(expect.stringContaining('#p='))
+    Reflect.deleteProperty(navigator, 'clipboard')
   }, 10000)
 
   it('não reexecuta a animação de entrada dos grupos restaurados após recarregar', async () => {
@@ -385,10 +403,10 @@ describe('Trama', () => {
     await screen.findByText('Temperos')
 
     cleanup()
-    window.history.replaceState({}, '', `/#p=${encodePuzzle(testPuzzle)}`)
+    window.history.replaceState({}, '', `/p/${TEST_PUZZLE_ID}`)
     render(<App />)
 
-    expect(screen.getByText('Temperos').closest('.solved-group')).toHaveClass('restored')
+    expect((await screen.findByText('Temperos')).closest('.solved-group')).toHaveClass('restored')
   })
 
   it('mostra home vazia sem histórico', () => {

@@ -12,7 +12,8 @@ export type Puzzle = {
 
 export type ListedPuzzle = {
   id: string
-  puzzle: Puzzle
+  title: string
+  author: string
   createdAt: string
 }
 
@@ -21,17 +22,6 @@ export type SelectionResult =
   | { kind: 'wrong'; oneAway: boolean }
 
 const normalize = (value: string) => value.trim().toLocaleUpperCase('pt-BR')
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  for (const byte of bytes) binary += String.fromCharCode(byte)
-  return btoa(binary)
-}
-
-function base64ToBytes(value: string): Uint8Array {
-  const binary = atob(value)
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0))
-}
 
 export function isPuzzleShape(value: unknown): value is Puzzle {
   if (!value || typeof value !== 'object') return false
@@ -50,27 +40,6 @@ export function isPuzzleShape(value: unknown): value is Puzzle {
         group.words.every((word) => typeof word === 'string'),
     )
   )
-}
-
-export function encodePuzzle(puzzle: Puzzle): string {
-  const json = JSON.stringify(puzzle)
-  return bytesToBase64(new TextEncoder().encode(json))
-    .replaceAll('+', '-')
-    .replaceAll('/', '_')
-    .replace(/=+$/u, '')
-}
-
-export function decodePuzzle(encoded: string): Puzzle {
-  try {
-    const base64 = encoded.replaceAll('-', '+').replaceAll('_', '/')
-    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')
-    const json = new TextDecoder('utf-8', { fatal: true }).decode(base64ToBytes(padded))
-    const value: unknown = JSON.parse(json)
-    if (!isPuzzleShape(value) || validatePuzzle(value).length > 0) throw new Error('invalid shape')
-    return value
-  } catch {
-    throw new Error('Link inválido ou incompleto.')
-  }
 }
 
 export function validatePuzzle(puzzle: Puzzle): string[] {

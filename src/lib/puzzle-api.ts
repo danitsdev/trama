@@ -1,4 +1,4 @@
-import { isPuzzleShape, validatePuzzle, type ListedPuzzle, type Puzzle } from './puzzle'
+import type { ListedPuzzle, Puzzle } from './puzzle'
 
 const SLUG_PATTERN = /^[A-Za-z0-9_-]{6,32}$/u
 
@@ -72,8 +72,8 @@ export async function listPuzzles(fetcher: Fetcher = fetch): Promise<ListedPuzzl
       typeof candidate.id === 'string' &&
       SLUG_PATTERN.test(candidate.id) &&
       typeof candidate.createdAt === 'string' &&
-      isPuzzleShape(candidate.puzzle) &&
-      validatePuzzle(candidate.puzzle).length === 0
+      typeof candidate.title === 'string' &&
+      typeof candidate.author === 'string'
     )
   })
 }
